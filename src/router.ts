@@ -1,46 +1,74 @@
 import * as http1 from 'node:http';
 import * as http2 from 'node:http2';
-import { Crypto } from 'typesdk/crypto';
-import type { Dict } from 'typesdk/types';
-import { EventEmitter } from 'typesdk/events';
+import { Crypto, Hash } from 'typesdk/crypto';
 import { isPlainObject } from 'typesdk/utils/is';
+import { assertString } from 'typesdk/utils/assertions';
+import type { Dict, GenericFunction } from 'typesdk/types';
+import { EventEmitter, Event as BaseEvent } from 'typesdk/events';
 
-import inet from '@lib/inet';
-import { isString, now } from '@utils';
-import { ExtendedRequest } from './request';
-import { ExtendedResponse } from './response';
-import { parseRequestBody } from '@lib/body-parser';
-import { ExtendedSerializableError } from '@lib/errors/http';
-import UnprocessableEntityError from '@lib/errors/http/UnprocessableEntityError';
+import inet from './lib/inet';
+import { isString, now } from './utils';
+import { parseRequestBody } from './lib/body-parser';
+import { ExtendedSerializableError } from './lib/errors/http';
+import { ExtendedHttp2Request, ExtendedRequest } from './request';
+import { ExtendedHttp2Response, ExtendedResponse } from './response';
+import UnprocessableEntityError from './lib/errors/http/UnprocessableEntityError';
+
+
+class RouteNotFoundEvent extends BaseEvent<{ readonly route: string; readonly enrichedHandler: string; readonly method: string; }> {
+  constructor(target: { readonly route: string; readonly enrichedHandler: string; readonly method: string; }) {
+    super('404', {
+      target,
+      cancelable: false,
+    });
+  }
+}
+
+class MethodNotAllowedEvent extends BaseEvent<{ readonly route: string; readonly enrichedHandler: string; readonly method: string; }> {
+  constructor(target: { readonly route: string; readonly enrichedHandler: string; readonly method: string; }) {
+    super('405', {
+      target,
+      cancelable: false,
+    });
+  }
+}
+
+class ErrorEvent extends BaseEvent<ExtendedSerializableError> {
+  constructor(error: ExtendedSerializableError) {
+    super('error', {
+      target: error,
+      cancelable: false,
+    });
+  }
+}
+
+
+/**
+ * The default events map for the `Router` class
+ */
+export interface DefaultRouterEventsMap {
+  /** An error event emitted when an error occurs */
+  error: ErrorEvent;
+
+  /** An event emitted when a route is not found */
+  '404': RouteNotFoundEvent;
+
+  /** An event emitted when a route is found but the method is not allowed */
+  '405': MethodNotAllowedEvent;
+}
+
+
+interface EventSubscriptionObject {
+  readonly callback: GenericFunction<any>;
+  unsubscribe(): void;
+  readonly signature: string;
+  readonly eventId: string;
+  readonly event: string;
+}
 
 
 const FIND_ROUTE_REGEX = /([^/]+)/g;
 const ROUTE_PARAM_REGEX = /:(\w+)/g;
-
-
-/**
- * An abstract representation of a route holding the most common properties
- */
-export interface AbstractRoute {
-
-  /** The body of the request */
-  body?: unknown;
-
-  /** Request headers  */
-  headers?: unknown;
-
-  /** Search params from the request URL */
-  query?: unknown;
-
-  /** Bindings parameters from the route path */
-  params?: unknown;
-
-  /** Cookies from the request */
-  cookie?: unknown;
-
-  /** The response object */
-  response?: unknown;
-}
 
 
 /**
@@ -111,6 +139,11 @@ export interface Http2EnrichedHandler {
 export type RouteList = Map<string, RouteHandler[]>;
 
 /**
+ * Represents an map object with the route handler as value (HTTP/2)
+ */
+export type Http2RouteList = Map<string, Http2RouteHandler[]>;
+
+/**
  * The options for the `Router` class
  */
 export type RouterProps = {
@@ -135,8 +168,9 @@ export class Router extends EventEmitter {
   readonly #prefix: string = '';
   readonly #baseRoutes: RouteList;
   readonly #enrichedRoutes: Map<string, EnrichedHandler>;
-  
+    
   #options: RouterProps = {};
+  #events: EventSubscriptionObject[];
   #defaultHandlers: RequestHandler[] = [];
 
   /**
@@ -334,7 +368,24 @@ export class Router extends EventEmitter {
 
         Object.assign(extendedRequest.params, params);
   
-        for(const handler of [...this.#defaultHandlers, ...handlers]) {
+        for(const handler of this.#defaultHandlers) {
+          let handleNextRoute = false;
+
+          const next = (error?: ExtendedSerializableError) => {
+            if(error) {
+              this.emit('error', error);
+              return Promise.resolve();
+            } else {
+              handleNextRoute = true;
+              return Promise.resolve();
+            }
+          };
+
+          await handler(extendedRequest, extendedResponse, next);
+          if(!handleNextRoute) break;
+        }
+
+        for(const handler of handlers) {
           let handleNextRoute = false;
 
           const next = (error?: ExtendedSerializableError) => {
@@ -356,6 +407,12 @@ export class Router extends EventEmitter {
             process.stdout.write(`<<- ${searchUrl} :: 405 Method Not Allowed (${(now() - duration).toFixed(2)}ms)\n`);
           }
 
+          this.emit('405', new MethodNotAllowedEvent({
+            route: searchUrl,
+            enrichedHandler: '',
+            method: request.method?.toUpperCase() ?? '',
+          }));
+
           response.writeHead(405, {
             'Content-Type': 'text/plain',
           });
@@ -366,6 +423,12 @@ export class Router extends EventEmitter {
             process.stdout.write(`<<- ${searchUrl} :: 404 Not Found (${(now() - duration).toFixed(2)}ms)\n`);
           }
 
+          this.emit('404', new RouteNotFoundEvent({
+            route: searchUrl,
+            enrichedHandler: '',
+            method: request.method?.toUpperCase() ?? '',
+          }));
+
           response.writeHead(404, {
             'Content-Type': 'text/plain',
           });
@@ -373,6 +436,9 @@ export class Router extends EventEmitter {
           return void response.end();
         }
       }
+    } catch (err: any) {
+      this.emit('error', new ErrorEvent(err));
+      throw err;
     } finally {
       duration = now() - duration;
 
@@ -573,10 +639,609 @@ export class Router extends EventEmitter {
 
     return Array.from(routeMap);
   }
+
+  /**
+   * Adds a listener for the given event
+   * 
+   * @param {string} event The event name 
+   * @param {Function} callback The callback function
+   */
+  public addEventListener<K extends keyof DefaultRouterEventsMap>(event: K | Omit<string, K>, callback: ((event: DefaultRouterEventsMap[K]) => void)) {
+    assertString(event);
+
+    const subscription = this.subscribe(event, callback);
+    const signature = Hash.sha256(callback.toString());
+
+    this.#events.push({
+      callback,
+      unsubscribe: subscription.unsubscribe,
+      signature,
+      eventId: Crypto.uuid(),
+      event,
+    });
+  }
+
+  /**
+   * Removes a listener for the given event
+   * 
+   * @param {string} event The event name 
+   * @param {Function} callback The callback function
+   */
+  public removeEventListener<K extends keyof DefaultRouterEventsMap>(event: K | Omit<string, K>, callback: ((event: DefaultRouterEventsMap[K]) => void)) {
+    assertString(event);
+    
+    const signature = Hash.sha256(callback.toString());
+    const index = this.#events.findIndex(e => e.event === event && e.signature === signature);
+    
+    if(index < 0) return;
+    
+    this.#events[index].unsubscribe();
+    this.#events.splice(index, 1);
+  }
+
+  /**
+   * Removes all listeners for the given event
+   * 
+   * @param {string} event The event name 
+   */
+  public off<K extends keyof DefaultRouterEventsMap>(event: K | Omit<string, K>): void {
+    const arr = this.#events.filter(e => e.event === event);
+    arr.forEach(listener => listener.unsubscribe());
+
+    this.#events = this.#events.filter(e => e.event !== event);
+  }
+
+  /**
+   * Removes all listeners for all events
+   */
+  public removeAllEventListeners() {
+    for(const listener of this.#events) {
+      listener.unsubscribe();
+    }
+    
+    this.#events = [];
+  }
 }
 
 
-export class Http2Router extends EventEmitter {}
+export class Http2Router extends EventEmitter {
+  readonly #prefix: string = '';
+  readonly #baseRoutes: Http2RouteList;
+  readonly #enrichedRoutes: Map<string, Http2EnrichedHandler>;
+    
+  #options: RouterProps = {};
+  #events: EventSubscriptionObject[];
+  #defaultHandlers: Http2RequestHandler[] = [];
+
+  /**
+   * Creates a new instance of `Router`
+   * 
+   * @param {string|undefined} prefix The prefix to be used for all routes
+   */
+  constructor(prefix?: string);
+
+  /**
+   * Creates a new instance of `Router`
+   * 
+   * @param {string|undefined} prefix The prefix to be used for all routes
+   * @param {RouterProps|undefined} props Initializations options
+   */
+  constructor(prefix?: string, options?: RouterProps);
+
+  /**
+   * Creates a new instance of `Router`
+   * 
+   * @param {Http2Router[]|undefined} routes An array of `Router` instances 
+   */
+  constructor(routes?: Http2Router[]);
+
+  /**
+   * Creates a new instance of `Router`
+   * 
+   * @param {Http2Router[]|undefined} routes An array of `Router` instances 
+   * @param {RouterProps|undefined} options Initializations options 
+   */
+  constructor(routes?: Http2Router[], options?: RouterProps);
+
+  /**
+   * Creates a new instance of `Router`
+   * 
+   * @param {RouterProps|undefined} options Initializations options 
+   */
+  constructor(options?: RouterProps);
+
+  /**
+   * Creates a new instance of `Router`
+   * 
+   * @param {string|Http2Router[]|undefined} x Either the prefix string or an array of `Router` instances 
+   * @param {RouterProps|undefined} options Initializations options 
+   */
+  constructor(x?: string | Http2Router[] | RouterProps, options?: RouterProps) {
+    if(!x && !options) return;
+
+    let rp: string | Http2Router[];
+    let o: RouterProps;
+
+    if(isString(x)) {
+      rp = x;
+      o = options && isPlainObject(options) ? options : {};
+    } else if (Array.isArray(x)) {
+      if(!x.every(r => r instanceof Router)) {
+        throw new TypeError('Some of the routes are not instances of `Router`');
+      }
+
+      rp = x;
+      o = options && isPlainObject(options) ? options : {};
+    } else {
+      rp = [];
+      o = x && isPlainObject(x) ? x : {};
+    }
+
+    super();
+    this.#options = Object.assign(DEFAULT_OPTIONS, o);
+
+    if(isString(rp)) {
+      this.#prefix = rp;
+
+      this.#baseRoutes = new Map<string, Http2RouteHandler[]>();
+      this.#enrichedRoutes = new Map<string, Http2EnrichedHandler>();
+    } else if(Array.isArray(rp) && rp.every(r => r instanceof Http2Router)) {
+      this.#prefix = '';
+
+      this.#enrichedRoutes = new Map(rp.flatMap(router => {
+        return [...router.parsedRoutes];
+      }));
+
+      this.#baseRoutes = new Map(rp.flatMap(router => {
+        return [...router.routes];
+      }));
+    }
+  }
+
+  /**
+   * The prefix used for all routes
+   */
+  public get prefix(): string {
+    return this.#prefix;
+  }
+
+  /**
+   * Returns a copy of the base routes in this router instance
+   */
+  public get routes(): Http2RouteList {
+    return new Map(this.#baseRoutes);
+  }
+
+  /**
+   * Returns a copy of the enriched routes in this router instance
+   */
+  public get parsedRoutes(): Map<string, Http2EnrichedHandler> {
+    return new Map(this.#enrichedRoutes);
+  }
+
+  #extendNativeObjects(request: http2.Http2ServerRequest, response: http2.Http2ServerResponse): { readonly extendedRequest: ExtendedHttp2Request; readonly extendedResponse: ExtendedHttp2Response } {
+    const extendedRequest: ExtendedHttp2Request = Object.assign(request, Object.freeze({
+      requestId: Crypto.uuid().replace(/-/g, ''),
+      requestTime: now(),
+      context: {} as Dict<any>,
+      inet: {
+        ip: inet.extractIPFromRequest(request),
+      },
+      params: {} as Dict<string>,
+
+      setContext(key: string, value: any): ExtendedHttp2Request {
+        this.context ??= {};
+        this.context[key] = value;
+
+        return this as unknown as ExtendedHttp2Request;
+      },
+
+      getContext(key: string): any {
+        return this.context?.[key] ?? null;
+      },
+
+      hasContextKey(key: string): boolean {
+        return Object.prototype.hasOwnProperty.call(this.context ?? {}, key);
+      },
+
+      removeContextKey(key: string): void {
+        delete this.context?.[key];
+      },
+
+      body(): Promise<any> {
+        return parseRequestBody(request);
+      },
+    }));
+
+    const extendedResponse: ExtendedHttp2Response = Object.assign(response, Object.freeze({
+      json(body: any): ExtendedHttp2Response {
+        let serialized: string;
+
+        try {
+          serialized = JSON.stringify(body);
+        } catch (err: any) {
+          throw new UnprocessableEntityError(
+            'Failed to serialize response data',
+            'Check if the provided data is serializable',
+            'Response->json',
+            { body } // eslint-disable-line comma-dangle
+          );
+        }
+
+        if(!(this as unknown as http2.Http2ServerResponse).headersSent) {
+          (this as unknown as http2.Http2ServerResponse).setHeader('Content-Type', 'application/json; charset=UTF-8');
+        }
+
+        (this as unknown as http2.Http2ServerResponse).write(serialized);
+        return this as unknown as ExtendedHttp2Response;
+      },
+
+      status(code: number): ExtendedHttp2Response {
+        (this as unknown as http2.Http2ServerResponse).statusCode = code;
+        return this as unknown as ExtendedHttp2Response;
+      },
+    }));
+
+    return { extendedRequest, extendedResponse };
+  }
+
+  /**
+   * Handles a request and returns a promise that resolves when the request is handled
+   * 
+   * @param {http1.IncomingMessage} request The request object 
+   * @param {http1.ServerResponse} response The response object 
+   */
+  public async executeHandler(request: http2.Http2ServerRequest, response: http2.Http2ServerResponse): Promise<void> {
+    const searchUrl = `${request.method?.toUpperCase()} ${request.url}` ?? '';
+    const maybeHandlers = await this.#findAndParse(searchUrl);
+
+    if(this.#options.verbose) {
+      process.stdout.write(`->> ${searchUrl} from ${request.headers.host ?? 'Unknown host'}\n`);
+    }
+
+    let duration: number = now();
+
+    try {
+      if(maybeHandlers) {
+        const { extendedRequest, extendedResponse } = this.#extendNativeObjects(request, response);
+        const { handlers, params } = maybeHandlers;
+
+        Object.assign(extendedRequest.params, params);
+  
+        for(const handler of this.#defaultHandlers) {
+          let handleNextRoute = false;
+
+          const next = (error?: ExtendedSerializableError) => {
+            if(error) {
+              this.emit('error', error);
+              return Promise.resolve();
+            } else {
+              handleNextRoute = true;
+              return Promise.resolve();
+            }
+          };
+
+          await handler(extendedRequest, extendedResponse, next);
+          if(!handleNextRoute) break;
+        }
+
+        for(const handler of handlers) {
+          let handleNextRoute = false;
+
+          const next = (error?: ExtendedSerializableError) => {
+            if(error) {
+              this.emit('error', error);
+              return Promise.resolve();
+            } else {
+              handleNextRoute = true;
+              return Promise.resolve();
+            }
+          };
+
+          await handler(extendedRequest, extendedResponse, next);
+          if(!handleNextRoute) break;
+        }
+      } else {
+        if(this.#existsWithAnotherMethod(searchUrl)) {
+          if(this.#options.verbose) {
+            process.stdout.write(`<<- ${searchUrl} :: 405 Method Not Allowed (${(now() - duration).toFixed(2)}ms)\n`);
+          }
+
+          this.emit('405', new MethodNotAllowedEvent({
+            route: searchUrl,
+            enrichedHandler: '',
+            method: request.method?.toUpperCase() ?? '',
+          }));
+
+          response.writeHead(405, {
+            'Content-Type': 'text/plain',
+          });
+
+          return void response.end();
+        } else {
+          if(this.#options.verbose) {
+            process.stdout.write(`<<- ${searchUrl} :: 404 Not Found (${(now() - duration).toFixed(2)}ms)\n`);
+          }
+
+          this.emit('404', new RouteNotFoundEvent({
+            route: searchUrl,
+            enrichedHandler: '',
+            method: request.method?.toUpperCase() ?? '',
+          }));
+
+          response.writeHead(404, {
+            'Content-Type': 'text/plain',
+          });
+    
+          return void response.end();
+        }
+      }
+    } catch (err: any) {
+      this.emit('error', new ErrorEvent(err));
+      throw err;
+    } finally {
+      duration = now() - duration;
+
+      if(this.#options.verbose) {
+        process.stdout.write(`<<- ${searchUrl} :: ${response.statusCode} (${duration.toFixed(2)}ms)\n`);
+      }
+    }
+  }
+
+  async #findAndParse(url: string): Promise<{
+    handlers: Http2RequestHandler[];
+    params: Dict<string>;
+  } | undefined> {
+    for(const [path, enrichedHandler] of this.#enrichedRoutes.entries()) {
+      const matches = new RegExp(path).exec(url);
+      if(!matches) continue;
+
+      const params = matches.slice(1).reduce((accumulator, value, index) => {
+        accumulator[enrichedHandler.params[index]] = value;
+        return accumulator;
+      }, {} as Dict<string>);
+
+      return {
+        handlers: enrichedHandler.handlers,
+        params,
+      };
+    }
+
+    return void 0;
+  }
+
+  #existsWithAnotherMethod(url: string): boolean {
+    return [...this.#enrichedRoutes.keys()].map(r => {
+      return new RegExp(r.split(' ')[1]);
+    }).some(r => r.test(url));
+  }
+
+  /**
+   * Adds a GET route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public get(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('GET', path, handlers);
+  }
+
+  /**
+   * Adds a POST route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public post(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('POST', path, handlers);
+  }
+
+  /**
+   * Adds a PUT route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public put(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('PUT', path, handlers);
+  }
+
+  /**
+   * Adds a PATCH route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public patch(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('PATCH', path, handlers);
+  }
+
+  /**
+   * Adds a DELETE route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public delete(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('DELETE', path, handlers);
+  }
+
+  /**
+   * Adds a OPTIONS route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public options(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('OPTIONS', path, handlers);
+  }
+
+  /**
+   * Adds a HEAD route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public head(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('HEAD', path, handlers);
+  }
+
+  /**
+   * Adds a TRACE route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public trace(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('TRACE', path, handlers);
+  }
+
+  /**
+   * Adds a CONNECT route to the router
+   *
+   * @param {string} path The route path
+   * @param {Http2RequestHandler[]} handlers The route handlers
+   * @returns {this} The router instance
+   */
+  public connect(path: string, ...handlers: Http2RequestHandler[]): this {
+    return this.#addRoute('CONNECT', path, handlers);
+  }
+
+  /**
+   * Concatenates the given handlers to the router
+   * 
+   * @param {(Http2RequestHandler|Router)[]} handlers The handlers to be concatenated
+   * @returns {this} The router instance
+   */
+  public use(...handlers: (Http2RequestHandler | Http2Router)[]): this {
+    for(const item of handlers) {
+      if(item instanceof Http2Router) {
+        for(const [path, enrichedHandler] of item.parsedRoutes.entries()) {
+          this.#enrichedRoutes.set(path, enrichedHandler);
+        }
+
+        for(const [path, handlers] of item.routes.entries()) {
+          this.#baseRoutes.set(path, handlers);
+        }      
+      } else {
+        this.#defaultHandlers.push(item);
+      }
+    }
+
+    return this;
+  }
+
+  #addRoute(method: string, path: string, handlers: Http2RequestHandler[]): this {
+    const parsedRoute = `${method.toUpperCase()} ${this.#prefix}${path === '/' ? '' : path}`;
+    
+    this.#baseRoutes.set(parsedRoute, handlers);
+    const [parsedURL, enrichedHandler] = this.#parse(parsedRoute, handlers)[0];
+    
+    this.#enrichedRoutes.set(parsedURL, enrichedHandler);
+    return this;
+  }
+
+  #parse(routes: Http2RouteList): [string, Http2EnrichedHandler][];
+  #parse(url: string, handlers: Http2RequestHandler[]): [string, Http2EnrichedHandler][];
+  #parse(listOrUrl: Http2RouteList | string, handlers?: Http2RequestHandler[]) {
+    const routeMap = new Map<string, Http2EnrichedHandler>();
+    if(isString(listOrUrl) && handlers) return this.#parse(new Map([[listOrUrl, handlers]]));
+
+    if(listOrUrl instanceof Map) {
+      for(const [key, handlers] of listOrUrl.entries()) {
+        let parsedKey = key;
+        let enrichedObject: Http2EnrichedHandler = {
+          params: [],
+          handlers,
+        };
+
+        const paramMatches = key.match(ROUTE_PARAM_REGEX);
+        
+        if(paramMatches) {
+          parsedKey = key.replaceAll(ROUTE_PARAM_REGEX, FIND_ROUTE_REGEX.source);
+          enrichedObject = {
+            handlers,
+            params: paramMatches.map(paramether => paramether.slice(1)),
+          };
+        }
+        
+        routeMap.set(parsedKey, enrichedObject);
+      }
+    }
+
+    return Array.from(routeMap);
+  }
+
+  /**
+   * Adds a listener for the given event
+   * 
+   * @param {string} event The event name 
+   * @param {Function} callback The callback function
+   */
+  public addEventListener<K extends keyof DefaultRouterEventsMap>(event: K | Omit<string, K>, callback: ((event: DefaultRouterEventsMap[K]) => void)) {
+    assertString(event);
+
+    const subscription = this.subscribe(event, callback);
+    const signature = Hash.sha256(callback.toString());
+
+    this.#events.push({
+      callback,
+      unsubscribe: subscription.unsubscribe,
+      signature,
+      eventId: Crypto.uuid(),
+      event,
+    });
+  }
+
+  /**
+   * Removes a listener for the given event
+   * 
+   * @param {string} event The event name 
+   * @param {Function} callback The callback function
+   */
+  public removeEventListener<K extends keyof DefaultRouterEventsMap>(event: K | Omit<string, K>, callback: ((event: DefaultRouterEventsMap[K]) => void)) {
+    assertString(event);
+    
+    const signature = Hash.sha256(callback.toString());
+    const index = this.#events.findIndex(e => e.event === event && e.signature === signature);
+    
+    if(index < 0) return;
+    
+    this.#events[index].unsubscribe();
+    this.#events.splice(index, 1);
+  }
+
+  /**
+   * Removes all listeners for the given event
+   * 
+   * @param {string} event The event name 
+   */
+  public off<K extends keyof DefaultRouterEventsMap>(event: K | Omit<string, K>): void {
+    const arr = this.#events.filter(e => e.event === event);
+    arr.forEach(listener => listener.unsubscribe());
+
+    this.#events = this.#events.filter(e => e.event !== event);
+  }
+
+  /**
+   * Removes all listeners for all events
+   */
+  public removeAllEventListeners() {
+    for(const listener of this.#events) {
+      listener.unsubscribe();
+    }
+    
+    this.#events = [];
+  }
+}
 
 
 

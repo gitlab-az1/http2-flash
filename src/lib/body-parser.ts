@@ -2,7 +2,7 @@ import * as http from 'node:http';
 import * as http2 from 'node:http2';
 import type { Dict } from 'typesdk/types';
 
-import BadRequestError from '@lib/errors/http/BadRequestError';
+import BadRequestError from './errors/http/BadRequestError';
 
 
 export { BodyParser } from 'typesdk/http/response';

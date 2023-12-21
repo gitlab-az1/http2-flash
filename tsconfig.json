@@ -32,11 +32,7 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "paths": {
-      "@lib/*": ["./src/lib/*"],
-      "@types": ["./src/types"],
-      "@utils": ["./src/utils"]
-    }
+    "paths": {}
   },
   "include": ["./src/**/*.ts"],
   "exclude": ["node_modules"]

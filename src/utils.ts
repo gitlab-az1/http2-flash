@@ -57,9 +57,9 @@ export function isNumber(value: unknown): boolean {
   const oct = /^0o[0-7]+$/i;
 
   return (
-    hex.test(str) ||
-    bin.test(str) ||
-    oct.test(str)
+    hex.test(str.toLowerCase()) ||
+    oct.test(str.toLowerCase()) ||
+    bin.test(str)
   );
 }
 
@@ -90,9 +90,9 @@ export function resolveNumber(value: unknown): number {
 
   if(value[0] === '+' || value[0] === '-') return value[0] === '+' ? +value.slice(1) : -value.slice(1);
 
-  if(value.startsWith('0x')) return parseInt(value, 16);
+  if(value.startsWith('0x')) return parseInt(value.toLowerCase(), 16);
+  if(value.startsWith('0o')) return parseInt(value.toLowerCase(), 8);
   if(value.startsWith('0b')) return parseInt(value, 2);
-  if(value.startsWith('0o')) return parseInt(value, 8);
 
   return parseInt(value, 10);
 }

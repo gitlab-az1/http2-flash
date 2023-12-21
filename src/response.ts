@@ -1,7 +1,7 @@
 import * as http from 'node:http';
 import * as http2 from 'node:http2';
 
-import UnprocessableEntityError from '@lib/errors/http/UnprocessableEntityError';
+import UnprocessableEntityError from './lib/errors/http/UnprocessableEntityError';
 
 
 /**

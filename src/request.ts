@@ -6,11 +6,11 @@ import * as stream from 'node:stream';
 import { Crypto } from 'typesdk/crypto';
 import type { Dict, ReadonlyDict } from 'typesdk/types';
 
-import * as inet from '@lib/inet';
+import * as inet from './lib/inet';
 
-import { now } from '@utils';
-import { parseRequestBody } from '@lib/body-parser';
-import BadRequestError from '@lib/errors/http/BadRequestError';
+import { now } from './utils';
+import { parseRequestBody } from './lib/body-parser';
+import BadRequestError from './lib/errors/http/BadRequestError';
 
 
 /**

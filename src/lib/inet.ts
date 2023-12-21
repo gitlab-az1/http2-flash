@@ -2,9 +2,9 @@ import * as http2 from 'node:http2';
 import { isPlainObject } from 'typesdk/utils/is';
 import type { Dict, MaybeArray } from 'typesdk/types';
 
-import { isDigit, isString } from '@utils';
-import { InvalidIPAddress } from '@lib/errors/inet';
-import { type Either, left, right } from '@lib/logic/Either';
+import { isDigit, isString } from '../utils';
+import { InvalidIPAddress } from './errors/inet';
+import { type Either, left, right } from './logic/Either';
 
 
 /**
@@ -217,7 +217,7 @@ export class IPv6 {
  * @returns An instance of either IPv4 or IPv6.
  * @throws {InvalidIPAddress} Throws an error if the value is not a valid IP address.
  */
-export function resolveIP(value: MaybeArray<string> | MaybeArray<number>): IPv4 | IPv6 {
+export function resolveIP(value: MaybeArray<string> | number[]): IPv4 | IPv6 {
   const v4 = IPv4.from(value);
   const v6 = IPv6.from(value);
 
