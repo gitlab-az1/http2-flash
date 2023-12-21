@@ -1,41 +1,22 @@
+import type { CommonHttpHeaders } from 'typesdk/types';
 
-/**
- * A collection of HTTP request methods.
- */
-export type HTTPMethod =
-  | (string & {}) // eslint-disable-line @typescript-eslint/ban-types
-  | 'ACL'
-  | 'BIND'
-  | 'CHECKOUT'
-  | 'CONNECT'
-  | 'COPY'
-  | 'DELETE'
-  | 'GET'
-  | 'HEAD'
-  | 'LINK'
-  | 'LOCK'
-  | 'M-SEARCH'
-  | 'MERGE'
-  | 'MKACTIVITY'
-  | 'MKCALENDAR'
-  | 'MKCOL'
-  | 'MOVE'
-  | 'NOTIFY'
-  | 'OPTIONS'
-  | 'PATCH'
-  | 'POST'
-  | 'PROPFIND'
-  | 'PROPPATCH'
-  | 'PURGE'
-  | 'PUT'
-  | 'REBIND'
-  | 'REPORT'
-  | 'SEARCH'
-  | 'SOURCE'
-  | 'SUBSCRIBE'
-  | 'TRACE'
-  | 'UNBIND'
-  | 'UNLINK'
-  | 'UNLOCK'
-  | 'UNSUBSCRIBE'
-  | 'ALL';
+
+export {
+  ArrayValues,
+  CommonHttpHeaders,
+  DataType,
+  Dict,
+  GenericFunction,
+  HttpMethod,
+  MaybeArray,
+  MaybePromise,
+  PromiseResult,
+  ReadonlyDict,
+  Required,
+  Writable,
+} from 'typesdk/types';
+
+
+export interface HttpHeaders extends CommonHttpHeaders {
+  [key: string]: string | undefined;
+}

@@ -4,7 +4,7 @@ import * as http2 from 'node:http2';
 import * as stream from 'node:stream';
 
 import { Crypto } from 'typesdk/crypto';
-import type { Dict, ReadonlyDict } from 'typesdk/types';
+import type { Dict, ReadonlyDict } from './types';
 
 import * as inet from './lib/inet';
 

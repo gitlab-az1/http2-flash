@@ -3,12 +3,12 @@ import * as http2 from 'node:http2';
 import { Crypto, Hash } from 'typesdk/crypto';
 import { isPlainObject } from 'typesdk/utils/is';
 import { assertString } from 'typesdk/utils/assertions';
-import type { Dict, GenericFunction } from 'typesdk/types';
 import { EventEmitter, Event as BaseEvent } from 'typesdk/events';
 
 import inet from './lib/inet';
 import { isString, now } from './utils';
 import { parseRequestBody } from './lib/body-parser';
+import type { Dict, GenericFunction } from './types';
 import { ExtendedSerializableError } from './lib/errors/http';
 import { ExtendedHttp2Request, ExtendedRequest } from './request';
 import { ExtendedHttp2Response, ExtendedResponse } from './response';

@@ -1,9 +1,9 @@
 import * as http2 from 'node:http2';
 import { isPlainObject } from 'typesdk/utils/is';
-import type { Dict, MaybeArray } from 'typesdk/types';
 
 import { isDigit, isString } from '../utils';
 import { InvalidIPAddress } from './errors/inet';
+import type { Dict, MaybeArray } from '../types';
 import { type Either, left, right } from './logic/Either';
 
 

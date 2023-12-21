@@ -37,7 +37,7 @@ async function recursiveRemoveUnnecessaryFiles(dir) {
       filename === '_types.js'*/ ||
       filename.endsWith('.tmp') ||
       filename.indexOf('.d.js') > -1 ||
-      filename === 'test.js' ||
+      //   filename === 'test.js' ||
       filename === 'test.d.ts'
     ) {
       await fs.promises.unlink(path.join(dir, filename));

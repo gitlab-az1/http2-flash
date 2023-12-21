@@ -1,5 +1,6 @@
-import type { Dict } from 'typesdk/types';
 import { Exception } from 'typesdk/errors';
+
+import type { Dict } from '../../types';
 
 
 /**
