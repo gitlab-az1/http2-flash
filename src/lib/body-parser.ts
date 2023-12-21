@@ -1,8 +1,9 @@
 import * as http from 'node:http';
 import * as http2 from 'node:http2';
-import type { Dict } from 'typesdk/types';
+// import type { Dict } from 'typesdk/types';
 
 import BadRequestError from './errors/http/BadRequestError';
+import NotImplementedError from './errors/http/NotImplementedError';
 
 
 export { BodyParser } from 'typesdk/http/response';
@@ -55,22 +56,10 @@ export async function parseRequestBody<T>(request: http.IncomingMessage | http2.
 
 
   function parseURLEncoded() {
-    let body: string = '';
-
-    return new Promise<T>((resolve, reject) => {
-      request.on('data', chunk => {
-        body += chunk.toString();
-      });
-  
+    // let body: string = '';
+    return new Promise<T>((_, reject) => {
       request.on('end', () => {
-        const dict: Dict<string> = {};
-
-        body.split('&').forEach(pair => {
-          const [key, value] = pair.split('=').map(item => item.trim());
-          dict[key] = decodeURIComponent(value);
-        });
-
-        resolve(dict as T);
+        reject(new NotImplementedError('Parsing of application/x-www-form-urlencoded is not implemented yet'));
       });
 
       request.on('error', (err) => reject(new BadRequestError('Failed to parse request body', undefined, 'parseRequestBody', { error: err, reason: err.message })));
