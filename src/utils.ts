@@ -96,3 +96,16 @@ export function resolveNumber(value: unknown): number {
 
   return parseInt(value, 10);
 }
+
+
+/**
+ * Returns a precise timestamp in milliseconds.
+ * 
+ * @returns {number} The current timestamp in milliseconds 
+ */
+export function now(): number {
+  return (typeof performance !== 'undefined' &&
+  typeof performance.now === 'function') ?
+    performance.now() :
+    Date.now();
+}

@@ -1,3 +1,4 @@
+import * as http2 from 'node:http2';
 import { isPlainObject } from 'typesdk/utils/is';
 import type { Dict, MaybeArray } from 'typesdk/types';
 
@@ -245,7 +246,7 @@ export function resolveIP(value: MaybeArray<string> | MaybeArray<number>): IPv4 
 interface MaybeRequestWithHeaders {
   readonly headers: Dict<string | readonly string[]> | {
     get(name: string): string | undefined;
-  };
+  } | http2.IncomingHttpHeaders;
 
   readonly socket?: {
     readonly remoteAddress?: string;
@@ -266,17 +267,19 @@ export function extractIPFromRequest(request: MaybeRequestWithHeaders): IPv4 | I
   if(isPlainObject(request.headers)) {
     realIp = (request.headers as Dict<string | readonly string[]>)['cf-connecting-ip'] ||
       (request.headers as Dict<string | readonly string[]>)['x-real-ip'] ||
+      (request.headers as Dict<string | readonly string[]>)[':remote-addr'] ||
       (request.headers as Dict<string | readonly string[]>)['x-forwarded-for'] ||
       (request.headers as Dict<string | readonly string[]>)['x-client-ip'] ||
       (request.headers as Dict<string | readonly string[]>)['x-cluster-client-ip'] ||
       request.socket?.remoteAddress ||
       '127.0.0.1';
-  } else if(typeof request.headers.get === 'function') {
-    realIp = request.headers.get('cf-connecting-ip') ||
-      request.headers.get('x-real-ip') ||
-      request.headers.get('x-forwarded-for') ||
-      request.headers.get('x-client-ip') ||
-      request.headers.get('x-cluster-client-ip') ||
+  } else if(typeof request.headers?.get === 'function') {
+    realIp = request.headers?.get('cf-connecting-ip') ||
+      request.headers?.get('x-real-ip') ||
+      request.headers?.get(':remote-addr') ||
+      request.headers?.get('x-forwarded-for') ||
+      request.headers?.get('x-client-ip') ||
+      request.headers?.get('x-cluster-client-ip') ||
       request.socket?.remoteAddress ||
       '127.0.0.1';
   } else {
@@ -299,3 +302,13 @@ export function extractIPFromRequest(request: MaybeRequestWithHeaders): IPv4 | I
 
   return resolveIP(realIp);
 }
+
+
+const _default = {
+  IPv4,
+  IPv6,
+  resolveIP,
+  extractIPFromRequest,
+};
+
+export default Object.freeze(_default);
