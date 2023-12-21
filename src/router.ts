@@ -340,6 +340,15 @@ export class Router extends EventEmitter {
         (this as unknown as http1.ServerResponse).statusCode = code;
         return this as unknown as ExtendedResponse;
       },
+
+      send(data: string | Buffer | Uint8Array): void {
+        if(isString(data)) {
+          data = `${data}\n`;
+        }
+
+        (this as unknown as http2.Http2ServerResponse).write(data);
+        (this as unknown as http2.Http2ServerResponse).end();
+      },
     }));
 
     return { extendedRequest, extendedResponse };
@@ -879,6 +888,15 @@ export class Http2Router extends EventEmitter {
       status(code: number): ExtendedHttp2Response {
         (this as unknown as http2.Http2ServerResponse).statusCode = code;
         return this as unknown as ExtendedHttp2Response;
+      },
+
+      send(data: string | Buffer | Uint8Array): void {
+        if(isString(data)) {
+          data = `${data}\n`;
+        }
+
+        (this as unknown as http2.Http2ServerResponse).write(data);
+        (this as unknown as http2.Http2ServerResponse).end();
       },
     }));
 

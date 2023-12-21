@@ -1,6 +1,7 @@
 import * as http from 'node:http';
 import * as http2 from 'node:http2';
 
+import { isString } from './utils';
 import UnprocessableEntityError from './lib/errors/http/UnprocessableEntityError';
 
 
@@ -27,6 +28,13 @@ export interface ExtendedResponse extends http.ServerResponse {
    * @param {number} code The status code to set 
    */
   status(code: number): ExtendedResponse;
+
+  /**
+   * Sends a chunk of the response body.
+   * 
+   * @param {string|Buffer|Uint8Array} data The data to send 
+   */
+  send(data: string | Buffer | Uint8Array): void;
 }
 
 
@@ -53,6 +61,13 @@ export interface ExtendedHttp2Response extends http2.Http2ServerResponse {
    * @param {number} code The status code to set 
    */
   status(code: number): ExtendedHttp2Response;
+
+  /**
+   * Sends a chunk of the response body.
+   * 
+   * @param {string|Buffer|Uint8Array} data The data to send 
+   */
+  send(data: string | Buffer | Uint8Array): void;
 }
 
 
@@ -102,6 +117,20 @@ export class Response extends http.ServerResponse implements ExtendedResponse {
     this.statusCode = code;
     return this;
   }
+
+  /**
+   * Sends a chunk of the response body.
+   * 
+   * @param {string|Buffer|Uint8Array} data The data to send 
+   */
+  public send(data: string | Buffer | Uint8Array): void {
+    if(isString(data)) {
+      data = `${data}\n`;
+    }
+
+    this.write(data);
+    this.end();    
+  }
 }
 
 
@@ -150,6 +179,20 @@ export class Http2Response extends http2.Http2ServerResponse implements Extended
   public status(code: number): ExtendedHttp2Response {
     this.statusCode = code;
     return this;
+  }
+
+  /**
+   * Sends a chunk of the response body.
+   * 
+   * @param {string|Buffer|Uint8Array} data The data to send 
+   */
+  public send(data: string | Buffer | Uint8Array): void {
+    if(isString(data)) {
+      data = `${data}\n`;
+    }
+
+    this.write(data);
+    this.end();    
   }
 }
 
