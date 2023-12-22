@@ -2,8 +2,10 @@ import math from 'typesdk/math';
 import * as tls from 'node:tls';
 import * as http from 'node:http';
 import * as https from 'node:https';
+import { format } from 'typesdk/utils/asci';
 import { jsonSafeStringify } from 'typesdk/safe-json';
 
+import inet from './lib/inet';
 import { Router } from './router';
 import { ExtendedSerializableError } from './lib/errors/http';
 
@@ -30,6 +32,7 @@ export type ServerProps = {
 }
 
 export function createServer(port?: number, options?: ServerProps): Promise<HttpServer>;
+export function createServer(options?: ServerProps): Promise<HttpServer>;
 export function createServer(portOrOptions?: number | ServerProps, options?: ServerProps): Promise<HttpServer> {
   let port: number;
   let o: ServerProps;
@@ -38,7 +41,7 @@ export function createServer(portOrOptions?: number | ServerProps, options?: Ser
     port = portOrOptions;
     o = options ?? {};
   } else {
-    port = portOrOptions?.port ?? math.random.uniform(1000, 50000);
+    port = portOrOptions?.port ?? math.random.uniform(2100, 18900, 'round');
     o = portOrOptions ?? {};
   }
 
@@ -46,17 +49,15 @@ export function createServer(portOrOptions?: number | ServerProps, options?: Ser
   const r = new Router({ verbose: typeof o.verbose === 'boolean' ? o.verbose : false });
   
   if(o.secure === true) {
-    srv = https.createServer({
-      ...o.ssl,
-      requestCert: true,
-      rejectUnauthorized: true,
-    }, _handleRequest(r));
+    srv = https.createServer({ ...o.ssl }, _handleRequest(r));
   } else {
     srv = http.createServer(_handleRequest(r));
   }
 
   return new Promise((resolve, reject) => {
     srv.listen(port, () => {
+      process.stdout.write(`${format.colors.magenta}[http2-flash] ${format.colors.green}HTTP/1${format.reset} Server is listening on: ${format.underline}${format.colors.cyan}http${o.secure === true ? 's' : ''}://${inet.localIP().address}:${port}${format.reset}\n`);
+
       const context = o.secure === true ? {
         secure: true as const,
         server: srv as https.Server,

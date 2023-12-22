@@ -1,8 +1,11 @@
 import type { Dict } from 'typesdk/types';
 import { Exception } from 'typesdk/errors';
+import { jsonSafeParser, jsonSafeStringify } from 'typesdk';
 
 
-export interface SerializedError {}
+export interface SerializedError {
+  readonly message: string;
+}
 
 export type ExtendedSerializableErrorOptions = {
   action?: string;
@@ -28,13 +31,23 @@ export class ExtendedSerializableError extends Exception {
   }
 
   public serialize(): Readonly<ExtendedSerializableErrorOptions> & { readonly message: string } {
-    return Object.freeze({
+    const obj = {
+      ...this,
       action: this.action,
       context: this.context,
       errors: this.errors,
       message: this.message,
       location: this.location,
       statusCode: this.statusCode,
-    });
+    };
+
+    return jsonSafeParser<Readonly<ExtendedSerializableErrorOptions> & { readonly message: string }>(jsonSafeStringify(obj)!) ?? {
+      action: this.action,
+      context: this.context,
+      errors: this.errors,
+      message: this.message,
+      location: this.location,
+      statusCode: this.statusCode,
+    };
   }
 }

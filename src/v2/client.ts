@@ -50,6 +50,7 @@ export class Http2Client {
   private constructor(session: http2.ClientHttp2Session, socket: tls.TLSSocket | net.Socket) {
     this.#session = session;
     this.#socket = socket;
+    this.#socket;this.#session; //#
   }
 
   /**

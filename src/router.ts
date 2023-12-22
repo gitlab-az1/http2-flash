@@ -1,5 +1,6 @@
 import * as http1 from 'node:http';
 import * as http2 from 'node:http2';
+import { format } from 'typesdk/utils/asci';
 import { Crypto, Hash } from 'typesdk/crypto';
 import { isPlainObject } from 'typesdk/utils/is';
 import { assertString } from 'typesdk/utils/assertions';
@@ -341,13 +342,13 @@ export class Router extends EventEmitter {
         return this as unknown as ExtendedResponse;
       },
 
-      send(data: string | Buffer | Uint8Array): void {
-        if(isString(data)) {
+      send(data: string | Buffer | Uint8Array, options?: { ignoreNullByteCharacter?: boolean }): void {
+        if(isString(data) && options?.ignoreNullByteCharacter !== true) {
           data = `${data}\n`;
         }
 
-        (this as unknown as http2.Http2ServerResponse).write(data);
-        (this as unknown as http2.Http2ServerResponse).end();
+        (this as unknown as http1.ServerResponse).write(data);
+        (this as unknown as http1.ServerResponse).end();
       },
     }));
 
@@ -377,7 +378,8 @@ export class Router extends EventEmitter {
 
         Object.assign(extendedRequest.params, params);
   
-        for(const handler of this.#defaultHandlers) {
+        for(let i = 0; i < this.#defaultHandlers.length - 1; i++) {
+          const handler = this.#defaultHandlers[i];
           let handleNextRoute = false;
 
           const next = (error?: ExtendedSerializableError) => {
@@ -393,6 +395,24 @@ export class Router extends EventEmitter {
           await handler(extendedRequest, extendedResponse, next);
           if(!handleNextRoute) break;
         }
+
+        let handleRoutes = false;
+
+        if(this.#defaultHandlers.length - 1 > -1) {
+          await this.#defaultHandlers[this.#defaultHandlers.length - 1](extendedRequest, extendedResponse, (error?: ExtendedSerializableError) => {
+            if(error) {
+              this.emit('error', error);
+              return Promise.resolve();
+            } else {
+              handleRoutes = true;
+              return Promise.resolve();
+            }
+          });
+        } else {
+          handleRoutes = true;
+        }
+
+        if(!handleRoutes) return;
 
         for(const handler of handlers) {
           let handleNextRoute = false;
@@ -413,7 +433,7 @@ export class Router extends EventEmitter {
       } else {
         if(this.#existsWithAnotherMethod(searchUrl)) {
           if(this.#options.verbose) {
-            process.stdout.write(`<<- ${searchUrl} :: 405 Method Not Allowed (${(now() - duration).toFixed(2)}ms)\n`);
+            process.stdout.write(`<<- ${searchUrl} :: ${format.colors.brightYellow}405 Method Not Allowed ${format.colors.magenta}(${(now() - duration).toFixed(2)}ms)${format.reset}\n`);
           }
 
           this.emit('405', new MethodNotAllowedEvent({
@@ -429,7 +449,7 @@ export class Router extends EventEmitter {
           return void response.end();
         } else {
           if(this.#options.verbose) {
-            process.stdout.write(`<<- ${searchUrl} :: 404 Not Found (${(now() - duration).toFixed(2)}ms)\n`);
+            process.stdout.write(`<<- ${searchUrl} :: ${format.colors.brightYellow}404 Not Found ${format.colors.magenta}(${(now() - duration).toFixed(2)}ms)${format.reset}\n`);
           }
 
           this.emit('404', new RouteNotFoundEvent({
@@ -452,7 +472,7 @@ export class Router extends EventEmitter {
       duration = now() - duration;
 
       if(this.#options.verbose) {
-        process.stdout.write(`<<- ${searchUrl} :: ${response.statusCode} (${duration.toFixed(2)}ms)\n`);
+        process.stdout.write(`<<- ${searchUrl} :: ${format.colors.brightYellow}${response.statusCode} ${format.colors.magenta}(${duration.toFixed(2)}ms)${format.reset}\n`);
       }
     }
   }
@@ -890,8 +910,8 @@ export class Http2Router extends EventEmitter {
         return this as unknown as ExtendedHttp2Response;
       },
 
-      send(data: string | Buffer | Uint8Array): void {
-        if(isString(data)) {
+      send(data: string | Buffer | Uint8Array, options?: { ignoreNullByteCharacter?: boolean }): void {
+        if(isString(data) && options?.ignoreNullByteCharacter !== true) {
           data = `${data}\n`;
         }
 
@@ -926,7 +946,8 @@ export class Http2Router extends EventEmitter {
 
         Object.assign(extendedRequest.params, params);
   
-        for(const handler of this.#defaultHandlers) {
+        for(let i = 0; i < this.#defaultHandlers.length - 1; i++) {
+          const handler = this.#defaultHandlers[i];
           let handleNextRoute = false;
 
           const next = (error?: ExtendedSerializableError) => {
@@ -942,6 +963,20 @@ export class Http2Router extends EventEmitter {
           await handler(extendedRequest, extendedResponse, next);
           if(!handleNextRoute) break;
         }
+
+        let handleRoutes = false;
+
+        await this.#defaultHandlers[this.#defaultHandlers.length - 1](extendedRequest, extendedResponse, (error?: ExtendedSerializableError) => {
+          if(error) {
+            this.emit('error', error);
+            return Promise.resolve();
+          } else {
+            handleRoutes = true;
+            return Promise.resolve();
+          }
+        });
+
+        if(!handleRoutes) return;
 
         for(const handler of handlers) {
           let handleNextRoute = false;
@@ -962,7 +997,7 @@ export class Http2Router extends EventEmitter {
       } else {
         if(this.#existsWithAnotherMethod(searchUrl)) {
           if(this.#options.verbose) {
-            process.stdout.write(`<<- ${searchUrl} :: 405 Method Not Allowed (${(now() - duration).toFixed(2)}ms)\n`);
+            process.stdout.write(`<<- ${searchUrl} :: ${format.colors.brightYellow}405 Method Not Allowed ${format.colors.magenta}(${(now() - duration).toFixed(2)}ms)${format.reset}\n`);
           }
 
           this.emit('405', new MethodNotAllowedEvent({
@@ -978,7 +1013,7 @@ export class Http2Router extends EventEmitter {
           return void response.end();
         } else {
           if(this.#options.verbose) {
-            process.stdout.write(`<<- ${searchUrl} :: 404 Not Found (${(now() - duration).toFixed(2)}ms)\n`);
+            process.stdout.write(`<<- ${searchUrl} :: ${format.colors.brightYellow}404 Not Found ${format.colors.magenta}(${(now() - duration).toFixed(2)}ms)${format.reset}\n`);
           }
 
           this.emit('404', new RouteNotFoundEvent({
@@ -1001,7 +1036,7 @@ export class Http2Router extends EventEmitter {
       duration = now() - duration;
 
       if(this.#options.verbose) {
-        process.stdout.write(`<<- ${searchUrl} :: ${response.statusCode} (${duration.toFixed(2)}ms)\n`);
+        process.stdout.write(`<<- ${searchUrl} :: ${format.colors.brightYellow}${response.statusCode} ${format.colors.magenta}(${duration.toFixed(2)}ms)${format.reset}\n`);
       }
     }
   }

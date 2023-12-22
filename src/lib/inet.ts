@@ -1,3 +1,4 @@
+import os from 'node:os';
 import * as http2 from 'node:http2';
 import { isPlainObject } from 'typesdk/utils/is';
 
@@ -304,9 +305,42 @@ export function extractIPFromRequest(request: MaybeRequestWithHeaders): IPv4 | I
 }
 
 
+/**
+ * Gets the local IP address of the machine.
+ * 
+ * @returns {IPv4} An instance of IPv4 with the local IP address. 
+ */
+export function localIP(): IPv4 {
+  const netifaces = os.networkInterfaces();
+  let ip: string = '0.0.0.0';
+
+  for(const iname in netifaces) {
+    if(iname === 'lo') continue;
+    if(ip !== '0.0.0.0') break;
+    
+    for(const i of (netifaces[iname] || [])) {
+      if(i.internal) continue;
+      if(i.family !== 'IPv4') continue;
+
+      ip = i.address;
+      break;
+    }
+  }
+
+  const ipv4 = IPv4.from(ip);
+
+  if(ipv4.isLeft()) {
+    throw ipv4.value;
+  }
+
+  return ipv4.value;
+}
+
+
 const _default = {
   IPv4,
   IPv6,
+  localIP,
   resolveIP,
   extractIPFromRequest,
 };

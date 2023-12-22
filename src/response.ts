@@ -5,6 +5,11 @@ import { isString } from './utils';
 import UnprocessableEntityError from './lib/errors/http/UnprocessableEntityError';
 
 
+type SendFunctionOptions = {
+  /** If set to `true`, the null byte character will not be appended to the end of the response body. */
+  ignoreNullByteCharacter?: boolean;
+}
+
 /**
  * Represents an extended HTTP response object, a subclass of the native `http.ServerResponse` class.
  * Additions to the native class are:
@@ -34,7 +39,7 @@ export interface ExtendedResponse extends http.ServerResponse {
    * 
    * @param {string|Buffer|Uint8Array} data The data to send 
    */
-  send(data: string | Buffer | Uint8Array): void;
+  send(data: string | Buffer | Uint8Array, options?: SendFunctionOptions): void;
 }
 
 
@@ -67,7 +72,7 @@ export interface ExtendedHttp2Response extends http2.Http2ServerResponse {
    * 
    * @param {string|Buffer|Uint8Array} data The data to send 
    */
-  send(data: string | Buffer | Uint8Array): void;
+  send(data: string | Buffer | Uint8Array, options?: SendFunctionOptions): void;
 }
 
 
@@ -123,8 +128,8 @@ export class Response extends http.ServerResponse implements ExtendedResponse {
    * 
    * @param {string|Buffer|Uint8Array} data The data to send 
    */
-  public send(data: string | Buffer | Uint8Array): void {
-    if(isString(data)) {
+  public send(data: string | Buffer | Uint8Array, options?: SendFunctionOptions): void {
+    if(isString(data) && options?.ignoreNullByteCharacter !== true) {
       data = `${data}\n`;
     }
 
@@ -186,13 +191,13 @@ export class Http2Response extends http2.Http2ServerResponse implements Extended
    * 
    * @param {string|Buffer|Uint8Array} data The data to send 
    */
-  public send(data: string | Buffer | Uint8Array): void {
-    if(isString(data)) {
+  public send(data: string | Buffer | Uint8Array, options?: SendFunctionOptions): void {
+    if(isString(data) && options?.ignoreNullByteCharacter !== true) {
       data = `${data}\n`;
     }
 
     this.write(data);
-    this.end();    
+    this.end();
   }
 }
 
