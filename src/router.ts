@@ -795,8 +795,8 @@ export class Http2Router extends EventEmitter {
       rp = x;
       o = options && isPlainObject(options) ? options : {};
     } else if (Array.isArray(x)) {
-      if(!x.every(r => r instanceof Router)) {
-        throw new TypeError('Some of the routes are not instances of `Router`');
+      if(!x.every(r => r instanceof Http2Router)) {
+        throw new TypeError('Some of the routes are not instances of `Http2Router`');
       }
 
       rp = x;

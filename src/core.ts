@@ -1,7 +1,8 @@
-import math from 'typesdk/math';
 import * as tls from 'node:tls';
 import * as http from 'node:http';
 import * as https from 'node:https';
+
+import math from 'typesdk/math';
 import { format } from 'typesdk/utils/asci';
 import { jsonSafeStringify } from 'typesdk/safe-json';
 
@@ -49,9 +50,9 @@ export function createServer(portOrOptions?: number | ServerProps, options?: Ser
   const r = new Router({ verbose: typeof o.verbose === 'boolean' ? o.verbose : false });
   
   if(o.secure === true) {
-    srv = https.createServer({ ...o.ssl }, _handleRequest(r));
+    srv = https.createServer({ ...o.ssl }, _handleRequest(r, o));
   } else {
-    srv = http.createServer(_handleRequest(r));
+    srv = http.createServer(_handleRequest(r, o));
   }
 
   return new Promise((resolve, reject) => {
@@ -83,11 +84,12 @@ export function createServer(portOrOptions?: number | ServerProps, options?: Ser
 function _handleRequest(router: Router, options?: Omit<ServerProps, 'ssl'>): http.RequestListener {
   return async (request, response) => {
     try {
-      return void await router.executeHandler(request, response);
+      await router.executeHandler(request, response);
+      return void 0;
     } catch (err: any) {
       if(options?.verbose === true) {
-        process.stderr.write(err.message + '\n');
-        process.stderr.write('at ' + err.stack + '\n');
+        process.stderr.write(format.colors.red + err.message);
+        process.stderr.write(format.colors.brightYellow + '  at ' + err.stack + format.reset + '\n');
       }
 
       if(err instanceof ExtendedSerializableError) {

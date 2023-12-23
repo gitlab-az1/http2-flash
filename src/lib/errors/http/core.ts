@@ -1,6 +1,7 @@
 import type { Dict } from 'typesdk/types';
 import { Exception } from 'typesdk/errors';
 import { jsonSafeParser, jsonSafeStringify } from 'typesdk';
+import { isPlainObject, typeofTest } from 'typesdk/utils/is';
 
 
 export interface SerializedError {
@@ -41,13 +42,25 @@ export class ExtendedSerializableError extends Exception {
       statusCode: this.statusCode,
     };
 
-    return jsonSafeParser<Readonly<ExtendedSerializableErrorOptions> & { readonly message: string }>(jsonSafeStringify(obj)!) ?? {
+    const fallbackObject = {
       action: this.action,
-      context: this.context,
+      context: Object.fromEntries(Object.entries(this.context ?? {}).map(([key, value]) => {
+        if(!typeofTest('object')(value)) return [key, value];
+        if(isPlainObject(value)) return [key, value];
+        return [key, `[${typeof value}]`];
+      })),
       errors: this.errors,
       message: this.message,
       location: this.location,
       statusCode: this.statusCode,
     };
+
+    const json = jsonSafeStringify(obj);
+    if(!json) return fallbackObject;
+
+    const parsed = jsonSafeParser<ReturnType<typeof this.serialize>>(json);
+    if(parsed.isLeft()) return fallbackObject;
+
+    return parsed.value;
   }
 }
